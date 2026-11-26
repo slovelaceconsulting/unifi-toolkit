@@ -14,9 +14,11 @@ services:
       # Change the host side with HOST_PORT instead.
       - APP_PORT=8000
     ports:
-      # Behind App Launcher's gateway, publish on 127.0.0.1 only:
-      #   HOST_BIND=127.0.0.1
-      - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-8000}:8000"
+      # Only App Launcher's gateway should reach this port. On Linux the gateway
+      # reaches it through Docker's bridge: HOST_BIND=172.17.0.1. On Docker
+      # Desktop: HOST_BIND=127.0.0.1. (Not 127.0.0.1 on Linux: the launcher's
+      # container can't reach it, and the tile says the app isn't responding.)
+      - "${HOST_BIND:-172.17.0.1}:${HOST_PORT:-8000}:8000"
     volumes:
       # Everything the toolkit keeps: the SQLite database, and the launcher's
       # CA certificate (data/launcher-ca.pem). App Launcher backs this up

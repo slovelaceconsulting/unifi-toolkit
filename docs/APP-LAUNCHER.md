@@ -103,7 +103,10 @@ and the toolkit's session cookie is `Secure`. Reach the toolkit over HTTPS:
   sign-in* for the tile. People reach it at the gateway's https port; the
   gateway forwards to the toolkit over plain http with `X-Forwarded-Proto` /
   `X-Forwarded-Host`, which the toolkit uses for its addresses. Publish the
-  toolkit on `127.0.0.1` (`HOST_BIND=127.0.0.1`).
+  toolkit only where the gateway can reach it: `HOST_BIND=172.17.0.1`
+  (Docker's bridge) on Linux, the default; `HOST_BIND=127.0.0.1` on Docker
+  Desktop. On Linux, `127.0.0.1` can't be reached from the launcher's
+  container, and the tile says "UniFi Toolkit isn't responding".
 - or the upstream Caddy setup (`DEPLOYMENT_TYPE=production`, `--profile
   production` with the repo's own `docker-compose.yml`).
 
