@@ -22,6 +22,8 @@ starlette>=0.47.2
 bcrypt>=4.0.0
 python-multipart>=0.0.32
 itsdangerous>=2.2.0
+# Sign in with App Launcher: RS256 ID-token verification (app/routers/launcher.py)
+PyJWT[crypto]>=2.10.1,<3
 
 # Security: Minimum versions to address known CVEs
 urllib3>=2.6.0      # GHSA-gm62-xv2j-4w53, GHSA-2xpw-w6gg-jr37

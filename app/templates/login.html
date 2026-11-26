@@ -210,6 +210,30 @@
             transform: none;
         }
 
+        a.btn {
+            text-decoration: none;
+        }
+
+        .btn-launcher {
+            margin-bottom: 0.5rem;
+        }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin: 1.25rem 0;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        .divider::before,
+        .divider::after {
+            content: "";
+            flex: 1;
+            border-top: 1px solid var(--border-color);
+        }
+
         .footer {
             text-align: center;
             margin-top: 2rem;
@@ -318,7 +342,24 @@
             </div>
             {% endif %}
 
-            <form method="POST" action="/login" id="login-form">
+            {% if launcher_problem %}
+            <div class="alert alert-warning">
+                <span class="alert-icon">⚙️</span>
+                <div>{{ launcher_problem }}</div>
+            </div>
+            {% endif %}
+
+            {% if launcher_ready %}
+            <a href="/auth/launcher/start" class="btn btn-primary btn-launcher" id="launcher-btn">
+                {{ launcher_label }}
+            </a>
+            {% if show_password_form %}
+            <div class="divider"><span>or sign in with a password</span></div>
+            {% endif %}
+            {% endif %}
+
+            {% if show_password_form %}
+            <form method="POST" action="/login{% if request.query_params.get('local') == '1' %}?local=1{% endif %}" id="login-form">
                 <div class="form-group">
                     <label for="username">Username</label>
                     <input
@@ -348,6 +389,7 @@
                     Sign In
                 </button>
             </form>
+            {% endif %}
 
             <div class="footer">
                 <p>
@@ -390,6 +432,7 @@
             const submitBtn = document.getElementById('submit-btn');
             const usernameInput = document.getElementById('username');
             const passwordInput = document.getElementById('password');
+            if (!countdownEl || !submitBtn) return;
             let remaining = {{ wait_seconds }};
 
             const interval = setInterval(function() {

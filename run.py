@@ -23,6 +23,7 @@ _FILE_SUPPORTED_VARS = [
     "DATABASE_URL",
     "UNIFI_PASSWORD",
     "UNIFI_API_KEY",
+    "LAUNCHER_CLIENT_SECRET",
 ]
 
 
@@ -301,8 +302,12 @@ if __name__ == "__main__":
         print(f"Deployment: PRODUCTION (authentication enabled)")
         if settings.domain:
             print(f"Domain: {settings.domain}")
+    elif os.getenv("LAUNCHER_ISSUER", "").strip():
+        print(f"Deployment: LOCAL (authentication enabled by App Launcher sign-in)")
     else:
         print(f"Deployment: LOCAL (authentication disabled)")
+    if os.getenv("LAUNCHER_ISSUER", "").strip():
+        print(f"App Launcher: {os.getenv('LAUNCHER_ISSUER').strip()}")
     print()
 
     print("Available tools:")

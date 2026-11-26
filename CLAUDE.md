@@ -127,6 +127,23 @@ Version is maintained in THREE files — keep them in sync:
   both of its images or the picture starts contradicting the verdict list. The
   network-isolation diagrams follow the same rule (one per isolation preset).
 
+### Sign in with App Launcher (fork only: `slovelaceconsulting/unifi-toolkit`)
+- Remotes: `origin` = Crosstalk-Solutions (upstream), `fork` = slovelaceconsulting.
+  Fork changes stay out of upstream PRs unless the user asks.
+- `app/routers/launcher.py` is an OIDC client for App Launcher, per
+  App-Launcher `docs/app-sso-integration.md` (fixed contract: PKCE S256,
+  state + nonce, RS256 ID token via JWKS, `/auth/launcher/start|callback`,
+  `/.well-known/launcher-app.json`). FastAPI port of suite-core's `launcher.py`;
+  PyJWT verifies the token, aiohttp does the HTTP (tests replace `launcher._http`).
+- `LAUNCHER_ISSUER` set => `is_auth_enabled()` is True even in local mode
+  (fail closed). The toolkit has no users/roles: anyone App Launcher lets
+  through gets full access (user's decision, 2026-11-26).
+- Sessions carry `method` (`password`/`launcher`); logout of a launcher
+  session redirects to the launcher's end-session endpoint.
+- `deploy/compose.yaml` + `deploy/.env.example` are the App Launcher-managed
+  install (image `ghcr.io/slovelaceconsulting/unifi-toolkit:${APP_TAG:-stable}`).
+  Docs: `docs/APP-LAUNCHER.md`.
+
 ### Schema Repair (`run.py → _repair_schema()`)
 - Runs on every startup after Alembic migrations
 - Safety net for when `create_all` causes Alembic to stamp-to-head, skipping ADD COLUMN ops

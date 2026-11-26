@@ -30,6 +30,18 @@ services:
       - UNIFI_VERIFY_SSL=${UNIFI_VERIFY_SSL:-false}
       # Tool settings
       - STALKER_REFRESH_INTERVAL=${STALKER_REFRESH_INTERVAL:-60}
+      # Sign in with App Launcher (optional; off while LAUNCHER_ISSUER is blank).
+      # Setting LAUNCHER_ISSUER turns sign-in on even in local mode.
+      # See docs/APP-LAUNCHER.md, and deploy/compose.yaml for an App
+      # Launcher-managed install (extra_hosts, CA certificate).
+      - LAUNCHER_ISSUER=${LAUNCHER_ISSUER:-}
+      - LAUNCHER_CLIENT_ID=${LAUNCHER_CLIENT_ID:-unifi-toolkit}
+      - LAUNCHER_CLIENT_SECRET=${LAUNCHER_CLIENT_SECRET:-}
+      - LAUNCHER_REDIRECT_URI=${LAUNCHER_REDIRECT_URI:-}
+      - LAUNCHER_POST_LOGOUT_REDIRECT_URI=${LAUNCHER_POST_LOGOUT_REDIRECT_URI:-}
+      - LAUNCHER_CA_FILE=${LAUNCHER_CA_FILE:-}
+      - LAUNCHER_BUTTON_LABEL=${LAUNCHER_BUTTON_LABEL:-}
+      - LAUNCHER_ONLY=${LAUNCHER_ONLY:-false}
     # Docker Swarm secrets support:
     # Instead of passing sensitive values via environment variables, you can use
     # Docker secrets with _FILE env vars. Example:

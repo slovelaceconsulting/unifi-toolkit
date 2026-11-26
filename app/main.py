@@ -27,6 +27,8 @@ from tools.house_arrest.main import create_app as create_arrest_app
 
 # Import authentication router and middleware
 from app.routers.auth import router as auth_router, AuthMiddleware, is_auth_enabled, verify_session
+from app.routers.launcher import router as launcher_router, configured_hostnames as launcher_hostnames
+from app.routers import launcher as launcher_mod
 from app.routers.config import router as config_router
 
 # Configure logging - respect LOG_LEVEL from environment
@@ -110,8 +112,17 @@ async def lifespan(app: FastAPI):
     deployment_type = os.getenv("DEPLOYMENT_TYPE", "local")
     if deployment_type == "production":
         logger.info("Running in PRODUCTION mode - authentication enabled")
+    elif launcher_mod.is_configured():
+        logger.info("Running in LOCAL mode with App Launcher sign-in - authentication enabled")
     else:
         logger.info("Running in LOCAL mode - authentication disabled")
+    launcher_cfg = launcher_mod.get_config()
+    if launcher_cfg.configured:
+        if launcher_cfg.missing:
+            logger.warning("App Launcher sign-in is NOT usable: set %s", ", ".join(launcher_cfg.missing))
+        else:
+            logger.info("App Launcher sign-in enabled (issuer %s, client %s)",
+                        launcher_cfg.issuer, launcher_cfg.client_id)
 
     # Note: Migrations are now run in run.py BEFORE uvicorn starts
     # This avoids async/sync issues that caused hangs on Synology NAS
@@ -215,6 +226,8 @@ class RebindingProtectionMiddleware(BaseHTTPMiddleware):
         allow = {"localhost"}
         if s.domain:
             allow.add(s.domain.strip().lower())
+        # The address App Launcher sends people back to (e.g. its gateway name)
+        allow.update(launcher_hostnames())
         self.wildcard = False
         extra = getattr(s, "allowed_hosts", None)
         if extra:
@@ -253,7 +266,10 @@ class RebindingProtectionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         # /health must answer regardless (container/Caddy health probes may use
         # a bare IP or service name).
-        if request.url.path == "/health":
+        # App Launcher fetches its registration manifest with the Host the
+        # admin typed, which may be a name this check doesn't know yet. The
+        # manifest is public and holds nothing secret.
+        if request.url.path in ("/health", launcher_mod.MANIFEST_PATH):
             return await call_next(request)
         if not self._allowed(request.headers.get("host", "")):
             from fastapi.responses import JSONResponse
@@ -278,6 +294,9 @@ app.add_middleware(RebindingProtectionMiddleware)
 
 # Include authentication router
 app.include_router(auth_router)
+
+# Sign in with App Launcher (off unless LAUNCHER_ISSUER is set)
+app.include_router(launcher_router)
 
 # Include configuration router
 app.include_router(config_router)

@@ -1,0 +1,37 @@
+# UniFi Toolkit, managed by App Launcher.
+#
+# Copy this file and .env.example to /srv/apps/unifi-toolkit/ (as compose.yaml
+# and .env), fill in .env, then add the app in App Launcher. Never edit this
+# file on the server; everything server-specific goes in .env.
+# See docs/APP-LAUNCHER.md.
+services:
+  unifi-toolkit:
+    image: ghcr.io/slovelaceconsulting/unifi-toolkit:${APP_TAG:-stable}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # The container always listens on 8000 (the image's healthcheck probes it).
+      # Change the host side with HOST_PORT instead.
+      - APP_PORT=8000
+    ports:
+      # Behind App Launcher's gateway, publish on 127.0.0.1 only:
+      #   HOST_BIND=127.0.0.1
+      - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-8000}:8000"
+    volumes:
+      # Everything the toolkit keeps: the SQLite database, and the launcher's
+      # CA certificate (data/launcher-ca.pem). App Launcher backs this up
+      # before every update.
+      - ./data:/app/data
+    extra_hosts:
+      # The toolkit calls the launcher's token and key endpoints itself, so the
+      # container must resolve the launcher's name. The launcher runs on this
+      # same machine.
+      - "${LAUNCHER_HOSTNAME:-apps.lakelandlakers.net}:host-gateway"
+    labels:
+      launcher.name: "UniFi Toolkit"
+      launcher.manage: "true"
+      launcher.health: "app"
+      launcher.signin.client-id: "unifi-toolkit"
+      launcher.signin.callback: "/auth/launcher/callback"
+      launcher.signin.logout: "/login"
+      launcher.signin.start: "/auth/launcher/start"

@@ -2,6 +2,11 @@
 
 A comprehensive suite of tools for UniFi network management and monitoring.
 
+> **Fork:** `slovelaceconsulting/unifi-toolkit` is a fork of
+> [Crosstalk-Solutions/unifi-toolkit](https://github.com/Crosstalk-Solutions/unifi-toolkit)
+> that adds Sign in with App Launcher and an App Launcher-managed install. See
+> [docs/APP-LAUNCHER.md](docs/APP-LAUNCHER.md).
+
 > **Note:** This project is not affiliated with, endorsed by, or sponsored by Ubiquiti Inc. UniFi is a trademark of Ubiquiti Inc.
 
 <img alt="UI Toolkit dashboard" src="docs/images/dashboard.jpg" />
@@ -217,6 +222,10 @@ Every secret-carrying variable also accepts a `_FILE` variant (e.g. `ENCRYPTION_
 - **Local mode**: No authentication (trusted LAN only)
 - **Production mode**: Session-based authentication with bcrypt password hashing
 - **Rate limiting**: 5 failed login attempts = 5 minute lockout
+- **Sign in with App Launcher** (this fork): App Launcher as the identity
+  provider over OpenID Connect, off unless `LAUNCHER_ISSUER` is set. Setup,
+  settings and the App Launcher-managed install (`deploy/compose.yaml`) are in
+  [docs/APP-LAUNCHER.md](docs/APP-LAUNCHER.md).
 
 ### HTTPS
 

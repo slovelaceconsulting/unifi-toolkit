@@ -2,7 +2,8 @@
 Authentication router for UI Toolkit
 
 Handles login/logout and session management for production deployments.
-Authentication is only enforced when DEPLOYMENT_TYPE=production.
+Authentication is enforced when DEPLOYMENT_TYPE=production, or when App
+Launcher sign-in is configured (LAUNCHER_ISSUER; see app/routers/launcher.py).
 """
 
 import os
@@ -37,8 +38,15 @@ RATE_LIMIT_MAX_ATTEMPTS = 5
 
 
 def is_auth_enabled() -> bool:
-    """Check if authentication is enabled (production mode)"""
-    return os.getenv("DEPLOYMENT_TYPE", "local").lower() == "production"
+    """Check if authentication is enabled.
+
+    On in production mode, and whenever App Launcher sign-in is configured
+    (LAUNCHER_ISSUER set): pointing the toolkit at an identity provider must
+    never leave it open just because DEPLOYMENT_TYPE was left at local.
+    """
+    if os.getenv("DEPLOYMENT_TYPE", "local").lower() == "production":
+        return True
+    return bool(os.getenv("LAUNCHER_ISSUER", "").strip())
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
@@ -50,16 +58,60 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
         return False
 
 
-def create_session(username: str) -> str:
-    """Create a new session token"""
+def create_session(username: str, method: str = "password") -> str:
+    """Create a new session token. `method` is how they signed in
+    ("password" or "launcher"); logout uses it to end the launcher session too."""
     token = secrets.token_urlsafe(32)
     _sessions[token] = {
         "username": username,
+        "method": method,
         "created_at": datetime.utcnow(),
         "expires_at": datetime.utcnow() + timedelta(days=7)
     }
-    logger.info(f"Session created for user: {username}")
+    logger.info(f"Session created for user: {username} (via {method})")
     return token
+
+
+SESSION_MAX_AGE = 7 * 24 * 60 * 60  # 7 days
+
+
+def start_session_response(username: str, method: str = "password", redirect_to: str = "/") -> RedirectResponse:
+    """Create a session and redirect with its cookie set."""
+    token = create_session(username, method=method)
+    response = RedirectResponse(url=redirect_to, status_code=303)
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        httponly=True,
+        secure=True,  # HTTPS only in production
+        samesite="lax",
+        max_age=SESSION_MAX_AGE,
+    )
+    return response
+
+
+def _login_context(request: Request) -> dict:
+    """What the login page needs to know about App Launcher sign-in."""
+    from app.routers import launcher
+    c = launcher.get_config()
+    has_password = bool(os.getenv("AUTH_PASSWORD_HASH", "").strip())
+    show_password = has_password and not (c.ready and c.launcher_only and request.query_params.get("local") != "1")
+    return {
+        "launcher_ready": c.ready,
+        "launcher_label": c.button_label,
+        "launcher_problem": (
+            "App Launcher sign-in is turned on but not finished: set " + ", ".join(c.missing) + "."
+            if c.configured and c.missing else None
+        ),
+        "show_password_form": show_password or not c.ready,
+    }
+
+
+def render_login(request: Request, error: Optional[str] = None, status_code: int = 200,
+                 rate_limited: bool = False, wait_seconds: int = 0):
+    context = {"error": error, "rate_limited": rate_limited, "wait_seconds": wait_seconds}
+    context.update(_login_context(request))
+    return templates.TemplateResponse(request, "login.html", context, status_code=status_code)
 
 
 def verify_session(token: str) -> Optional[dict]:
@@ -139,15 +191,7 @@ async def login_page(request: Request):
     if session:
         return RedirectResponse(url="/", status_code=303)
 
-    return templates.TemplateResponse(
-        request,
-        "login.html",
-        {
-            "error": None,
-            "rate_limited": False,
-            "wait_seconds": 0
-        }
-    )
+    return render_login(request)
 
 
 @router.post("/login")
@@ -156,7 +200,7 @@ async def login(
     username: str = Form(...),
     password: str = Form(...)
 ):
-    """Process login form"""
+    """Process login form (also the break-glass path when LAUNCHER_ONLY hides it)"""
     # If not in production mode, redirect to dashboard
     if not is_auth_enabled():
         return RedirectResponse(url="/", status_code=303)
@@ -168,16 +212,7 @@ async def login(
     is_allowed, wait_seconds = check_rate_limit(client_ip)
     if not is_allowed:
         logger.warning(f"Rate limited login attempt from {client_ip}")
-        return templates.TemplateResponse(
-            request,
-            "login.html",
-            {
-                "error": None,
-                "rate_limited": True,
-                "wait_seconds": wait_seconds
-            },
-            status_code=429
-        )
+        return render_login(request, rate_limited=True, wait_seconds=wait_seconds, status_code=429)
 
     # Get expected credentials from environment
     expected_username = os.getenv("AUTH_USERNAME", "admin")
@@ -191,49 +226,41 @@ async def login(
         # Check if now rate limited
         is_allowed, wait_seconds = check_rate_limit(client_ip)
 
-        return templates.TemplateResponse(
+        return render_login(
             request,
-            "login.html",
-            {
-                "error": "Invalid username or password",
-                "rate_limited": not is_allowed,
-                "wait_seconds": wait_seconds
-            },
-            status_code=401
+            error="Invalid username or password",
+            rate_limited=not is_allowed,
+            wait_seconds=wait_seconds,
+            status_code=401,
         )
 
     # Successful login
     record_login_attempt(client_ip, success=True)
     logger.info(f"Successful login for user '{username}' from {client_ip}")
 
-    # Create session
-    token = create_session(username)
-
     # Redirect to dashboard with session cookie
-    response = RedirectResponse(url="/", status_code=303)
-    response.set_cookie(
-        key="session_token",
-        value=token,
-        httponly=True,
-        secure=True,  # HTTPS only in production
-        samesite="lax",
-        max_age=7 * 24 * 60 * 60  # 7 days
-    )
-
-    return response
+    return start_session_response(username, method="password", redirect_to="/")
 
 
 @router.get("/logout")
 async def logout(request: Request):
-    """Logout and clear session"""
+    """Logout and clear session. A launcher sign-in also ends the launcher session."""
+    from app.routers import launcher
+
     token = request.cookies.get("session_token")
+    method = None
 
     if token and token in _sessions:
         username = _sessions[token].get("username", "unknown")
+        method = _sessions[token].get("method")
         del _sessions[token]
         logger.info(f"User '{username}' logged out")
 
-    response = RedirectResponse(url="/login", status_code=303)
+    target = "/login"
+    if method == "launcher":
+        target = await launcher.logout_url(request) or target
+
+    response = RedirectResponse(url=target, status_code=303)
     response.delete_cookie("session_token")
 
     return response
@@ -277,7 +304,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/login",
             "/static",
             "/health",
-            "/favicon.ico"
+            "/favicon.ico",
+            # App Launcher sign-in (start/callback) and its registration manifest
+            "/auth/launcher",
+            "/.well-known",
         ]
 
         path = request.url.path
