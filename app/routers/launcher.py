@@ -130,15 +130,26 @@ def is_ready() -> bool:
     return get_config().ready
 
 
+def app_public_url() -> str:
+    """APP_PUBLIC_URL: the toolkit's address as people reach it. App Launcher
+    writes it (and keeps it current) for apps it manages."""
+    return os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/")
+
+
 def configured_hostnames() -> set:
-    """Hostnames from the configured redirect / post-logout addresses, so the
-    anti-rebinding check accepts the address the launcher sends people to."""
+    """Hostnames the anti-rebinding check must accept: the configured return
+    addresses, APP_PUBLIC_URL, and the launcher's own name. App Launcher's
+    gateway serves apps on the launcher's hostname (other ports), and passes
+    that Host header on."""
     c = get_config()
     hosts = set()
-    for url in (c.redirect_uri, c.post_logout_uri):
+    for url in (c.redirect_uri, c.post_logout_uri, app_public_url(), c.issuer if c.configured else ""):
         host = urlsplit(url).hostname if url else None
         if host:
             hosts.add(host.lower())
+    hostname = os.getenv("LAUNCHER_HOSTNAME", "").strip().lower()
+    if c.configured and hostname:
+        hosts.add(hostname)
     return hosts
 
 
@@ -163,9 +174,19 @@ def _public_origin(request: Request) -> str:
     return f"{proto}://{host}"
 
 
+def _origin(url: str) -> str:
+    p = urlsplit(url)
+    return f"{p.scheme}://{p.netloc}"
+
+
 def redirect_uri_for(request: Request, c: Optional[LauncherConfig] = None) -> str:
+    """LAUNCHER_REDIRECT_URI, else APP_PUBLIC_URL + callback, else the address
+    the request came in on."""
     c = c or get_config()
-    return c.redirect_uri or _public_origin(request) + CALLBACK_PATH
+    if c.redirect_uri:
+        return c.redirect_uri
+    base = _origin(app_public_url()) if app_public_url() else _public_origin(request)
+    return base + CALLBACK_PATH
 
 
 def post_logout_uri_for(request: Request, c: Optional[LauncherConfig] = None) -> str:
@@ -173,8 +194,9 @@ def post_logout_uri_for(request: Request, c: Optional[LauncherConfig] = None) ->
     if c.post_logout_uri:
         return c.post_logout_uri
     if c.redirect_uri:
-        p = urlsplit(c.redirect_uri)
-        return f"{p.scheme}://{p.netloc}{LOGOUT_RETURN_PATH}"
+        return _origin(c.redirect_uri) + LOGOUT_RETURN_PATH
+    if app_public_url():
+        return _origin(app_public_url()) + LOGOUT_RETURN_PATH
     return _public_origin(request) + LOGOUT_RETURN_PATH
 
 
@@ -494,7 +516,7 @@ async def launcher_manifest(request: Request):
         "logoutReturnPath": LOGOUT_RETURN_PATH,
         "startPath": START_PATH,
     }
-    if c.redirect_uri:
-        doc["redirectUris"] = [c.redirect_uri]
+    if c.redirect_uri or app_public_url():
+        doc["redirectUris"] = [redirect_uri_for(request, c)]
         doc["postLogoutRedirectUris"] = [post_logout_uri_for(request, c)]
     return JSONResponse(doc, headers={"Cache-Control": "no-store"})

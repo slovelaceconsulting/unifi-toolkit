@@ -453,6 +453,38 @@ class TestLoginPageAndLogout:
         assert client.get("/.well-known/launcher-app.json").status_code == 200
 
 
+class TestAppLauncherManagedSettings:
+    """Settings App Launcher writes into a managed app's .env."""
+
+    def test_app_public_url_sets_return_addresses(self, provider):
+        with patch.dict(os.environ, {**BASE_ENV, "APP_PUBLIC_URL": "https://apps.example.test:9402/"}):
+            os.environ.pop("LAUNCHER_REDIRECT_URI", None)
+            c = TestClient(_app(), base_url="http://127.0.0.1:8000")
+            r = c.get("/auth/launcher/start", follow_redirects=False)
+            q = parse_qs(urlsplit(r.headers["location"]).query)
+            assert q["redirect_uri"] == ["https://apps.example.test:9402/auth/launcher/callback"]
+            doc = c.get("/.well-known/launcher-app.json").json()
+            assert doc["redirectUris"] == ["https://apps.example.test:9402/auth/launcher/callback"]
+            assert doc["postLogoutRedirectUris"] == ["https://apps.example.test:9402/login"]
+
+    def test_explicit_redirect_uri_beats_app_public_url(self, client, env):
+        with patch.dict(os.environ, {"APP_PUBLIC_URL": "https://elsewhere.example.test"}):
+            assert client.get("/.well-known/launcher-app.json").json()["redirectUris"] == [REDIRECT]
+
+    def test_gateway_hostname_accepted_by_rebinding_check(self, env):
+        with patch.dict(os.environ, {"LAUNCHER_HOSTNAME": "apps.example.test",
+                                     "APP_PUBLIC_URL": "https://toolkit-pub.example.test"}):
+            hosts = launcher.configured_hostnames()
+        assert {"apps.example.test", "toolkit-pub.example.test", "toolkit.example.test"} <= hosts
+
+    def test_launcher_hostname_ignored_when_feature_off(self):
+        with patch.dict(os.environ, {"LAUNCHER_HOSTNAME": "apps.example.test"}):
+            os.environ.pop("LAUNCHER_ISSUER", None)
+            os.environ.pop("LAUNCHER_REDIRECT_URI", None)
+            os.environ.pop("APP_PUBLIC_URL", None)
+            assert launcher.configured_hostnames() == set()
+
+
 class TestHelpers:
     def test_basic_auth_form_encodes_parts(self):
         h = launcher.basic_auth("a b", "p:w%")

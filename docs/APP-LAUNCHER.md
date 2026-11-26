@@ -41,42 +41,58 @@ or later). The toolkit's side is `app/routers/launcher.py`.
 | `LAUNCHER_ISSUER` | `https://apps.lakelandlakers.net:8443` | Required. Blank = feature off. No path. |
 | `LAUNCHER_CLIENT_ID` | `unifi-toolkit` | Default `unifi-toolkit`. Must match App Launcher. |
 | `LAUNCHER_CLIENT_SECRET` | (shown once by App Launcher) | Required. `LAUNCHER_CLIENT_SECRET_FILE` works too. |
-| `LAUNCHER_REDIRECT_URI` | `https://apps.lakelandlakers.net:9402/auth/launcher/callback` | Recommended. Blank = built from the request (`X-Forwarded-Proto` / `X-Forwarded-Host`). Must exactly match what's registered. |
+| `APP_PUBLIC_URL` | `https://apps.lakelandlakers.net:9402` | The toolkit's address as people reach it; App Launcher keeps it current. Its host passes the anti-rebinding check. |
+| `LAUNCHER_HOSTNAME` | `apps.lakelandlakers.net` | The launcher's name (filled in by App Launcher). Used by `extra_hosts`, and accepted by the anti-rebinding check (the gateway serves apps on it). |
+| `LAUNCHER_REDIRECT_URI` | `https://apps.lakelandlakers.net:9402/auth/launcher/callback` | Blank = `APP_PUBLIC_URL` + `/auth/launcher/callback`, else built from the request (`X-Forwarded-Proto` / `X-Forwarded-Host`). Must exactly match what's registered. |
 | `LAUNCHER_POST_LOGOUT_REDIRECT_URI` | | Blank = the redirect address's origin + `/login`. |
 | `LAUNCHER_CA_FILE` | `/app/data/launcher-ca.pem` | The launcher's CA (`ca.pem`, not `cert.pem`). Blank = system trust store. A path that doesn't exist is an error, not a fallback. |
 | `LAUNCHER_BUTTON_LABEL` | `Sign in with App Launcher` | |
 | `LAUNCHER_ONLY` | `false` | `true` hides the password form (break-glass at `/login?local=1`). |
 
-The host in `LAUNCHER_REDIRECT_URI` is added to the anti-DNS-rebinding
-allowlist automatically. If people reach the toolkit through another name, set
+`ENCRYPTION_KEY` may be left blank: the toolkit then keeps its key in
+`data/encryption.key` (made on first start, mode 600), beside the database.
+
+The hosts of `LAUNCHER_REDIRECT_URI`, `APP_PUBLIC_URL`, the issuer and
+`LAUNCHER_HOSTNAME` are added to the anti-DNS-rebinding allowlist
+automatically. If people reach the toolkit through another name, set
 `DOMAIN` or `ALLOWED_HOSTS`.
 
-## Installing on the App Launcher machine
+## Installing with App Launcher
 
-1. **Make the folder** `/srv/apps/unifi-toolkit/` with a `data/` folder in it
-   (`chown 1000:1000 data`: the container runs as uid 1000).
-2. Copy `deploy/compose.yaml` → `compose.yaml` and `deploy/.env.example` →
-   `.env`.
-3. **Copy the launcher's CA certificate** (App Launcher's `data/tls/ca.pem`)
-   to `data/launcher-ca.pem`. It's valid for 10 years and doesn't change when
-   the launcher renews its own certificate.
-4. **Register the client in App Launcher:** *Management → Sign-in → Apps that
-   use "Sign in with App Launcher" → Add app.* Pick the toolkit (the form
-   pre-fills from its manifest or compose labels), client ID `unifi-toolkit`,
-   set *Who can sign in* to the toolkit's tile, and check the redirect and
-   post-logout addresses. **Copy the secret: it's shown once.**
-5. **Fill in `.env`:** `ENCRYPTION_KEY` (generate once, never change),
-   `LAUNCHER_ISSUER`, `LAUNCHER_HOSTNAME`, `LAUNCHER_CLIENT_SECRET`,
-   `LAUNCHER_REDIRECT_URI`, and optionally a break-glass
-   `AUTH_PASSWORD_HASH` (every `$` written as `$$`).
-6. **Start it** from App Launcher (or `docker compose up -d`). The log shows
-   `App Launcher sign-in enabled (issuer ..., client unifi-toolkit)`, or names
-   the missing settings.
-7. **Check:** sign in through the button as someone with access, then as
-   someone without (expect the no-access message), then sign out and confirm
-   both sessions are gone. Use the *Test* button on the app's registration in
-   App Launcher too.
-8. Once it works, optionally set `LAUNCHER_ONLY=true`.
+App Launcher's *Add app* reads `deploy/compose.yaml` and `deploy/.env.example`
+straight from this repository, so there's nothing to copy by hand.
+
+1. **Add the app:** *Management → App manager → Add app*, repository
+   `slovelaceconsulting/unifi-toolkit`. The form fills in `LAUNCHER_ISSUER`
+   and `LAUNCHER_HOSTNAME` with the launcher's own address. Leave
+   `ENCRYPTION_KEY` blank (the toolkit makes one in `data/encryption.key`).
+   If port 8000 is taken, the form suggests another `HOST_PORT`. Add it.
+   It starts locked: the login page says `LAUNCHER_CLIENT_SECRET` is missing.
+2. **Give the tile HTTPS:** turn on *Require App Launcher sign-in* for the
+   toolkit's tile, so people reach it through the gateway's https port. Put
+   that address in `APP_PUBLIC_URL` (e.g. `https://apps.example.org:9402`).
+3. **Register the sign-in client:** *Management → Sign-in → Apps that use
+   "Sign in with App Launcher" → Add app.* Pick the toolkit: the form fills
+   itself from the toolkit's manifest and compose labels (client ID
+   `unifi-toolkit`, `/auth/launcher/callback`, `/login`). Set *Who can sign
+   in* to the toolkit's tile. **Copy the secret: it's shown once.**
+4. **Finish `.env`** in the app manager's settings for the toolkit:
+   `LAUNCHER_CLIENT_SECRET`, and, only if the launcher uses its own CA rather
+   than a public certificate, `LAUNCHER_CA_FILE=/app/data/launcher-ca.pem`
+   after copying the launcher's `data/tls/ca.pem` to the toolkit's
+   `data/launcher-ca.pem`. Optionally a break-glass `AUTH_PASSWORD_HASH`
+   (every `$` written as `$$`). Restart it.
+5. **Check:** the log shows `App Launcher sign-in enabled`. Use *Test* on the
+   sign-in registration, then sign in as someone with access, as someone
+   without (expect the no-access message), and sign out (both sessions end).
+6. Once it works, optionally set `LAUNCHER_ONLY=true`.
+
+The container runs as uid 1000 and writes to `data/`. On Linux, if the app
+manager's user isn't uid 1000, `sudo chown 1000:1000 <apps>/unifi-toolkit/data`.
+
+Without App Launcher's app manager: make `/srv/apps/unifi-toolkit/`, copy
+`deploy/compose.yaml` → `compose.yaml` and `deploy/.env.example` → `.env`,
+fill it in, and `docker compose up -d`.
 
 ### HTTPS
 

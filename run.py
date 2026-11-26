@@ -63,16 +63,34 @@ if env_file.exists():
     except ImportError:
         print("WARNING: python-dotenv not installed, .env file will not be loaded")
         print("Install it with: pip install python-dotenv")
-elif not os.getenv("ENCRYPTION_KEY"):
-    print("=" * 70)
-    print("ERROR: No .env file found and ENCRYPTION_KEY not set!")
-    print("=" * 70)
-    print()
-    print("Either create a .env file (cp .env.example .env)")
-    print("or pass environment variables directly to the container.")
-    print()
-    print("=" * 70)
-    sys.exit(1)
+
+
+def _ensure_encryption_key():
+    """No ENCRYPTION_KEY given: use the one kept in data/encryption.key, or
+    generate it there on first start. It lives beside the database it
+    protects, so the two are backed up and restored together (App Launcher
+    backs up ./data before every update). An explicit ENCRYPTION_KEY wins."""
+    if os.getenv("ENCRYPTION_KEY", "").strip():
+        return
+    key_file = Path(__file__).parent / "data" / "encryption.key"
+    try:
+        if key_file.is_file():
+            os.environ["ENCRYPTION_KEY"] = key_file.read_text().strip()
+            print(f"Using the encryption key in {key_file}")
+            return
+        from cryptography.fernet import Fernet
+        key_file.parent.mkdir(parents=True, exist_ok=True)
+        key = Fernet.generate_key().decode()
+        fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(key + "\n")
+        os.environ["ENCRYPTION_KEY"] = key
+        print(f"Generated a new encryption key in {key_file} (keep it with the database)")
+    except Exception as e:
+        print(f"WARNING: could not read or create {key_file}: {e}")
+
+
+_ensure_encryption_key()
 
 # Check for required environment variables
 encryption_key = os.getenv("ENCRYPTION_KEY")

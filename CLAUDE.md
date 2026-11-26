@@ -142,7 +142,12 @@ Version is maintained in THREE files — keep them in sync:
   session redirects to the launcher's end-session endpoint.
 - `deploy/compose.yaml` + `deploy/.env.example` are the App Launcher-managed
   install (image `ghcr.io/slovelaceconsulting/unifi-toolkit:${APP_TAG:-stable}`).
-  Docs: `docs/APP-LAUNCHER.md`.
+  Docs: `docs/APP-LAUNCHER.md`. App Launcher's *Add app* reads those two files
+  from the repo's default branch, and manages `LAUNCHER_ISSUER`,
+  `LAUNCHER_HOSTNAME`, `APP_PUBLIC_URL`, `LAUNCHER_REDIRECT_URI` etc. in `.env`.
+- Blank `ENCRYPTION_KEY` => `run.py` keeps one in `data/encryption.key`.
+- The anti-rebinding allowlist includes the launcher's hostname, because the
+  gateway serves apps on it (Host = `launcher-host:gateway-port`).
 
 ### Schema Repair (`run.py → _repair_schema()`)
 - Runs on every startup after Alembic migrations
